@@ -1,0 +1,8 @@
+*.bak
+*.tmp
+*.log
+*~
+.DS_Store
+
+conf/*.conf
+!conf/*.conf.dist
