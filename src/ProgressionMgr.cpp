@@ -45,16 +45,8 @@ namespace GPA
             return false;
         }
 
-        if (!_catalog.Validate(error))
+        if (!ValidateState(initialState, error))
             return false;
-
-        if (!_catalog.IsValidState(initialState))
-        {
-            error =
-                "Initial progression state is invalid.";
-
-            return false;
-        }
 
         _activeState =
             initialState;
@@ -75,6 +67,25 @@ namespace GPA
     bool ProgressionMgr::IsRollbackAllowed() const
     {
         return _allowRollback;
+    }
+
+    bool ProgressionMgr::ValidateState(
+        ProgressionState const& state,
+        std::string& error) const
+    {
+        if (!_catalog.Validate(error))
+            return false;
+
+        if (!_catalog.IsValidState(state))
+        {
+            error =
+                "Progression state is invalid.";
+
+            return false;
+        }
+
+        error.clear();
+        return true;
     }
 
     ProgressionState const*

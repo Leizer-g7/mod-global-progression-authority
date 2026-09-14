@@ -24,6 +24,10 @@ namespace GPA
 
         bool IsRollbackAllowed() const;
 
+        bool ValidateState(
+            ProgressionState const& state,
+            std::string& error) const;
+
         ProgressionState const* GetActiveState() const;
 
         PhaseDefinition const* GetActiveDefinition() const;
