@@ -62,7 +62,7 @@ int main()
     if (manager.IsInitialized())
         return 10;
 
-    if (manager.GetActiveState() != nullptr)
+    if (manager.GetActiveState().has_value())
         return 11;
 
     if (manager.GetActiveDefinition() != nullptr)

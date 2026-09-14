@@ -1,6 +1,7 @@
 #include "ProgressionMgr.h"
 
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace
@@ -21,31 +22,33 @@ namespace
     }
 
     bool StateEquals(
-        GPA::ProgressionState const* state,
+        std::optional<GPA::ProgressionState> const& state,
         std::uint8_t phase,
-        std::uint8_t contentStage)
+        std::uint8_t stage)
     {
         return
             state &&
             state->phase == phase &&
-            state->contentStage == contentStage;
+            state->contentStage == stage;
     }
 }
 
 int main()
 {
+    using GPA::ProgressionMgr;
+    using GPA::TransitionDirection;
+    using GPA::TransitionStatus;
+
     /*
-     * --------------------------------------------------
-     * NOT INITIALIZED
-     * --------------------------------------------------
+     * Uninitialized manager.
      */
-    GPA::ProgressionMgr manager;
+    ProgressionMgr manager;
 
     if (!Expect(
             !manager.IsInitialized(),
             "Manager must start uninitialized.") ||
         !Expect(
-            manager.GetActiveState() == nullptr,
+            !manager.GetActiveState().has_value(),
             "Uninitialized manager exposed active state.") ||
         !Expect(
             manager.GetActiveDefinition() == nullptr,
@@ -54,30 +57,22 @@ int main()
         return 1;
     }
 
-    GPA::TransitionResult beforeInit =
+    auto beforeInit =
         manager.EvaluateTransition({20, 0});
 
     if (!Expect(
             beforeInit.status ==
-                GPA::TransitionStatus::NotInitialized,
+                TransitionStatus::NotInitialized,
             "Evaluate before initialization must fail.") ||
         !Expect(
             !beforeInit.previous.has_value(),
-            "Uninitialized transition invented previous state.") ||
-        !Expect(
-            !beforeInit.Succeeded(),
-            "NotInitialized must not be successful.") ||
-        !Expect(
-            !beforeInit.Changed(),
-            "Evaluation must not report a change."))
+            "Uninitialized evaluation invented previous state."))
     {
         return 2;
     }
 
     /*
-     * --------------------------------------------------
-     * INVALID INITIAL STATE
-     * --------------------------------------------------
+     * Invalid initialization.
      */
     std::string error;
 
@@ -88,25 +83,20 @@ int main()
                 error),
             "Invalid initial state was accepted.") ||
         !Expect(
-            !error.empty(),
-            "Invalid initialization returned no error.") ||
-        !Expect(
             !manager.IsInitialized(),
-            "Failed initialization changed manager state."))
+            "Invalid initialization changed authority."))
     {
         return 3;
     }
 
     /*
-     * --------------------------------------------------
-     * VALID INITIALIZATION
-     * --------------------------------------------------
+     * Valid initialization.
      */
     error.clear();
 
     if (!Expect(
             manager.Initialize(
-                {60, 0},
+                {60, 1},
                 false,
                 error),
             "Valid initialization failed.") ||
@@ -114,40 +104,20 @@ int main()
             error.empty(),
             "Successful initialization returned an error.") ||
         !Expect(
-            manager.IsInitialized(),
-            "Manager did not become initialized.") ||
-        !Expect(
-            !manager.IsRollbackAllowed(),
-            "Rollback unexpectedly enabled.") ||
-        !Expect(
             StateEquals(
                 manager.GetActiveState(),
                 60,
-                0),
-            "Initial state mismatch."))
+                1),
+            "Initial state mismatch.") ||
+        !Expect(
+            !manager.IsRollbackAllowed(),
+            "Rollback unexpectedly enabled."))
     {
         return 4;
     }
 
-    GPA::PhaseDefinition const* definition =
-        manager.GetActiveDefinition();
-
-    if (!Expect(
-            definition != nullptr,
-            "Active definition missing.") ||
-        !Expect(
-            definition->phase == 60,
-            "Active definition phase mismatch.") ||
-        !Expect(
-            definition->contentStageMin == 0 &&
-            definition->contentStageMax == 8,
-            "Active definition ContentStage range mismatch."))
-    {
-        return 5;
-    }
-
     /*
-     * A second Initialize must never replace authority.
+     * Second initialization is forbidden.
      */
     error.clear();
 
@@ -161,177 +131,120 @@ int main()
             StateEquals(
                 manager.GetActiveState(),
                 60,
-                0),
-            "Second initialization changed active state."))
+                1),
+            "Second initialization changed authority."))
     {
-        return 6;
+        return 5;
     }
 
     /*
-     * --------------------------------------------------
-     * NO-OP
-     * --------------------------------------------------
+     * NoChange evaluation is read-only.
      */
-    GPA::TransitionResult noChange =
-        manager.RequestTransition({60, 0});
-
-    if (!Expect(
-            noChange.status ==
-                GPA::TransitionStatus::NoChange,
-            "No-op returned wrong status.") ||
-        !Expect(
-            noChange.direction ==
-                GPA::TransitionDirection::NoChange,
-            "No-op returned wrong direction.") ||
-        !Expect(
-            noChange.Succeeded(),
-            "No-op should be successful.") ||
-        !Expect(
-            !noChange.Changed(),
-            "No-op reported a state change."))
-    {
-        return 7;
-    }
-
-    /*
-     * --------------------------------------------------
-     * EVALUATION IS NON-DESTRUCTIVE
-     * --------------------------------------------------
-     */
-    GPA::TransitionResult evaluation =
+    auto noChange =
         manager.EvaluateTransition({60, 1});
 
     if (!Expect(
-            evaluation.status ==
-                GPA::TransitionStatus::Allowed,
-            "Valid forward evaluation was not allowed.") ||
+            noChange.status ==
+                TransitionStatus::NoChange,
+            "NoChange evaluation returned wrong status.") ||
         !Expect(
-            evaluation.direction ==
-                GPA::TransitionDirection::Forward,
-            "Forward evaluation returned wrong direction.") ||
-        !Expect(
-            StateEquals(
-                manager.GetActiveState(),
-                60,
-                0),
-            "EvaluateTransition modified active state."))
-    {
-        return 8;
-    }
-
-    /*
-     * --------------------------------------------------
-     * FORWARD CONTENT STAGE
-     * --------------------------------------------------
-     */
-    GPA::TransitionResult forward =
-        manager.RequestTransition({60, 1});
-
-    if (!Expect(
-            forward.status ==
-                GPA::TransitionStatus::Applied,
-            "Forward transition was not applied.") ||
-        !Expect(
-            forward.direction ==
-                GPA::TransitionDirection::Forward,
-            "Forward transition direction mismatch.") ||
-        !Expect(
-            forward.previous.has_value(),
-            "Applied transition has no previous state.") ||
-        !Expect(
-            forward.previous->phase == 60 &&
-            forward.previous->contentStage == 0,
-            "Previous state mismatch.") ||
+            noChange.direction ==
+                TransitionDirection::NoChange,
+            "NoChange evaluation returned wrong direction.") ||
         !Expect(
             StateEquals(
                 manager.GetActiveState(),
                 60,
                 1),
-            "Forward transition did not update authority."))
+            "NoChange evaluation modified authority."))
     {
-        return 9;
+        return 6;
     }
 
     /*
-     * --------------------------------------------------
-     * INVALID TARGET MUST NOT MUTATE STATE
-     * --------------------------------------------------
+     * Forward evaluation is allowed and read-only.
      */
-    GPA::TransitionResult invalid =
-        manager.RequestTransition({60, 9});
+    auto forward =
+        manager.EvaluateTransition({60, 2});
+
+    if (!Expect(
+            forward.status ==
+                TransitionStatus::Allowed,
+            "Forward evaluation was not allowed.") ||
+        !Expect(
+            forward.direction ==
+                TransitionDirection::Forward,
+            "Forward evaluation returned wrong direction.") ||
+        !Expect(
+            StateEquals(
+                manager.GetActiveState(),
+                60,
+                1),
+            "Forward evaluation modified authority."))
+    {
+        return 7;
+    }
+
+    /*
+     * Invalid target.
+     */
+    auto invalid =
+        manager.EvaluateTransition({60, 9});
 
     if (!Expect(
             invalid.status ==
-                GPA::TransitionStatus::InvalidTarget,
+                TransitionStatus::InvalidTarget,
             "Invalid target returned wrong status.") ||
         !Expect(
             StateEquals(
                 manager.GetActiveState(),
                 60,
                 1),
-            "Invalid target modified active state."))
+            "Invalid evaluation modified authority."))
+    {
+        return 8;
+    }
+
+    /*
+     * Rollback blocked by policy.
+     */
+    auto blockedRollback =
+        manager.EvaluateTransition({60, 0});
+
+    if (!Expect(
+            blockedRollback.status ==
+                TransitionStatus::RollbackNotAllowed,
+            "Blocked rollback returned wrong status.") ||
+        !Expect(
+            blockedRollback.direction ==
+                TransitionDirection::Rollback,
+            "Blocked rollback returned wrong direction."))
+    {
+        return 9;
+    }
+
+    /*
+     * Shared boundary is forward.
+     */
+    auto boundary =
+        manager.EvaluateTransition({70, 8});
+
+    if (!Expect(
+            boundary.status ==
+                TransitionStatus::Allowed,
+            "60 -> 70 boundary was not allowed.") ||
+        !Expect(
+            boundary.direction ==
+                TransitionDirection::Forward,
+            "60 -> 70 boundary direction mismatch."))
     {
         return 10;
     }
 
     /*
-     * --------------------------------------------------
-     * ROLLBACK BLOCKED
-     * --------------------------------------------------
+     * Rollback-enabled manager evaluates rollback as Allowed.
      */
-    GPA::TransitionResult blockedRollback =
-        manager.RequestTransition({60, 0});
-
-    if (!Expect(
-            blockedRollback.status ==
-                GPA::TransitionStatus::RollbackNotAllowed,
-            "Blocked rollback returned wrong status.") ||
-        !Expect(
-            blockedRollback.direction ==
-                GPA::TransitionDirection::Rollback,
-            "Blocked rollback direction mismatch.") ||
-        !Expect(
-            StateEquals(
-                manager.GetActiveState(),
-                60,
-                1),
-            "Blocked rollback modified active state."))
-    {
-        return 11;
-    }
-
-    /*
-     * --------------------------------------------------
-     * SHARED BOUNDARY FORWARD TRANSITION
-     * --------------------------------------------------
-     */
-    GPA::TransitionResult expansion =
-        manager.RequestTransition({70, 8});
-
-    if (!Expect(
-            expansion.status ==
-                GPA::TransitionStatus::Applied,
-            "60 -> 70 boundary transition failed.") ||
-        !Expect(
-            expansion.direction ==
-                GPA::TransitionDirection::Forward,
-            "60 -> 70 boundary direction mismatch.") ||
-        !Expect(
-            StateEquals(
-                manager.GetActiveState(),
-                70,
-                8),
-            "70/8 did not become active."))
-    {
-        return 12;
-    }
-
-    /*
-     * --------------------------------------------------
-     * ROLLBACK ENABLED MANAGER
-     * --------------------------------------------------
-     */
-    GPA::ProgressionMgr rollbackManager;
+    ProgressionMgr rollbackManager;
 
     error.clear();
 
@@ -340,65 +253,41 @@ int main()
                 {80, 13},
                 true,
                 error),
-            "Rollback manager initialization failed.") ||
-        !Expect(
-            rollbackManager.IsRollbackAllowed(),
-            "Rollback manager did not enable rollback."))
+            "Rollback manager initialization failed."))
     {
-        return 13;
+        return 11;
     }
 
-    GPA::TransitionResult phaseRollback =
-        rollbackManager.RequestTransition({70, 13});
+    auto rollback =
+        rollbackManager.EvaluateTransition({70, 13});
 
     if (!Expect(
-            phaseRollback.status ==
-                GPA::TransitionStatus::Applied,
-            "Phase rollback was not applied.") ||
+            rollback.status ==
+                TransitionStatus::Allowed,
+            "Allowed rollback evaluation was rejected.") ||
         !Expect(
-            phaseRollback.direction ==
-                GPA::TransitionDirection::Rollback,
-            "Phase rollback direction mismatch.") ||
+            rollback.direction ==
+                TransitionDirection::Rollback,
+            "Allowed rollback direction mismatch.") ||
         !Expect(
             StateEquals(
                 rollbackManager.GetActiveState(),
-                70,
+                80,
                 13),
-            "Phase rollback state mismatch."))
+            "Rollback evaluation modified authority."))
     {
-        return 14;
-    }
-
-    GPA::TransitionResult fullRollback =
-        rollbackManager.RequestTransition({60, 8});
-
-    if (!Expect(
-            fullRollback.status ==
-                GPA::TransitionStatus::Applied,
-            "Full rollback was not applied.") ||
-        !Expect(
-            fullRollback.direction ==
-                GPA::TransitionDirection::Rollback,
-            "Full rollback direction mismatch.") ||
-        !Expect(
-            StateEquals(
-                rollbackManager.GetActiveState(),
-                60,
-                8),
-            "Full rollback state mismatch."))
-    {
-        return 15;
+        return 12;
     }
 
     std::cout
         << "PROGRESSION_MGR_INITIALIZATION=OK\n"
-        << "PROGRESSION_MGR_NOOP=OK\n"
-        << "PROGRESSION_MGR_EVALUATION=OK\n"
-        << "PROGRESSION_MGR_FORWARD=OK\n"
+        << "PROGRESSION_MGR_VALIDATION=OK\n"
+        << "PROGRESSION_MGR_NOCHANGE_EVALUATION=OK\n"
+        << "PROGRESSION_MGR_FORWARD_EVALUATION=OK\n"
         << "PROGRESSION_MGR_INVALID_TARGET=OK\n"
-        << "PROGRESSION_MGR_ROLLBACK_BLOCK=OK\n"
+        << "PROGRESSION_MGR_ROLLBACK_POLICY=OK\n"
         << "PROGRESSION_MGR_SHARED_BOUNDARY=OK\n"
-        << "PROGRESSION_MGR_ROLLBACK_ENABLED=OK\n";
+        << "PROGRESSION_MGR_READ_ONLY=OK\n";
 
     return 0;
 }

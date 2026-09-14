@@ -9,15 +9,6 @@ namespace
         if (current == target)
             return GPA::TransitionDirection::NoChange;
 
-        /*
-         * GPA has two progression axes:
-         *
-         *   Phase
-         *   ContentStage
-         *
-         * If either axis moves backwards, the whole transition
-         * is treated as rollback.
-         */
         if (target.phase < current.phase ||
             target.contentStage < current.contentStage)
         {
@@ -37,6 +28,9 @@ namespace GPA
         bool allowRollback,
         std::string& error)
     {
+        std::lock_guard<std::mutex> lock(
+            _transitionMutex);
+
         if (_activeState)
         {
             error =
@@ -61,11 +55,17 @@ namespace GPA
 
     bool ProgressionMgr::IsInitialized() const
     {
+        std::lock_guard<std::mutex> lock(
+            _transitionMutex);
+
         return _activeState.has_value();
     }
 
     bool ProgressionMgr::IsRollbackAllowed() const
     {
+        std::lock_guard<std::mutex> lock(
+            _transitionMutex);
+
         return _allowRollback;
     }
 
@@ -85,21 +85,25 @@ namespace GPA
         }
 
         error.clear();
+
         return true;
     }
 
-    ProgressionState const*
+    std::optional<ProgressionState>
     ProgressionMgr::GetActiveState() const
     {
-        if (!_activeState)
-            return nullptr;
+        std::lock_guard<std::mutex> lock(
+            _transitionMutex);
 
-        return &*_activeState;
+        return _activeState;
     }
 
     PhaseDefinition const*
     ProgressionMgr::GetActiveDefinition() const
     {
+        std::lock_guard<std::mutex> lock(
+            _transitionMutex);
+
         if (!_activeState)
             return nullptr;
 
@@ -109,6 +113,17 @@ namespace GPA
 
     TransitionResult
     ProgressionMgr::EvaluateTransition(
+        ProgressionState const& target) const
+    {
+        std::lock_guard<std::mutex> lock(
+            _transitionMutex);
+
+        return EvaluateTransitionUnlocked(
+            target);
+    }
+
+    TransitionResult
+    ProgressionMgr::EvaluateTransitionUnlocked(
         ProgressionState const& target) const
     {
         TransitionResult result;
@@ -165,25 +180,10 @@ namespace GPA
         return result;
     }
 
-    TransitionResult
-    ProgressionMgr::RequestTransition(
-        ProgressionState const& target)
+    void ProgressionMgr::CommitEvaluatedTransitionUnlocked(
+        TransitionResult const& evaluation)
     {
-        TransitionResult result =
-            EvaluateTransition(target);
-
-        if (result.status !=
-            TransitionStatus::Allowed)
-        {
-            return result;
-        }
-
         _activeState =
-            target;
-
-        result.status =
-            TransitionStatus::Applied;
-
-        return result;
+            evaluation.target;
     }
 }

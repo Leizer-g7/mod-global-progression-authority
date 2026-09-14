@@ -5,11 +5,14 @@
 #include "ProgressionState.h"
 #include "ProgressionTransition.h"
 
+#include <mutex>
 #include <optional>
 #include <string>
 
 namespace GPA
 {
+    class ProgressionTransitionCoordinator;
+
     class ProgressionMgr
     {
     public:
@@ -28,18 +31,25 @@ namespace GPA
             ProgressionState const& state,
             std::string& error) const;
 
-        ProgressionState const* GetActiveState() const;
+        std::optional<ProgressionState> GetActiveState() const;
 
         PhaseDefinition const* GetActiveDefinition() const;
 
         TransitionResult EvaluateTransition(
             ProgressionState const& target) const;
 
-        TransitionResult RequestTransition(
-            ProgressionState const& target);
-
     private:
+        friend class ProgressionTransitionCoordinator;
+
+        TransitionResult EvaluateTransitionUnlocked(
+            ProgressionState const& target) const;
+
+        void CommitEvaluatedTransitionUnlocked(
+            TransitionResult const& evaluation);
+
         PhaseCatalog _catalog;
+
+        mutable std::mutex _transitionMutex;
 
         std::optional<ProgressionState> _activeState;
 

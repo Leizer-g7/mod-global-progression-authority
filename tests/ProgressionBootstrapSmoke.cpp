@@ -13,7 +13,7 @@ namespace
         std::uint8_t phase,
         std::uint8_t stage)
     {
-        GPA::ProgressionState const* state =
+        auto state =
             manager.GetActiveState();
 
         return state &&
