@@ -11,6 +11,7 @@
 
 namespace GPA
 {
+    class ProgressionBootstrap;
     class ProgressionTransitionCoordinator;
 
     class ProgressionMgr
@@ -39,7 +40,15 @@ namespace GPA
             ProgressionState const& target) const;
 
     private:
+        friend class ProgressionBootstrap;
         friend class ProgressionTransitionCoordinator;
+
+        bool IsInitializedUnlocked() const;
+
+        bool InitializeUnlocked(
+            ProgressionState const& initialState,
+            bool allowRollback,
+            std::string& error);
 
         TransitionResult EvaluateTransitionUnlocked(
             ProgressionState const& target) const;

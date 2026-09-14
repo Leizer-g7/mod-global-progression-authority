@@ -31,6 +31,17 @@ namespace GPA
         std::lock_guard<std::mutex> lock(
             _transitionMutex);
 
+        return InitializeUnlocked(
+            initialState,
+            allowRollback,
+            error);
+    }
+
+    bool ProgressionMgr::InitializeUnlocked(
+        ProgressionState const& initialState,
+        bool allowRollback,
+        std::string& error)
+    {
         if (_activeState)
         {
             error =
@@ -58,6 +69,11 @@ namespace GPA
         std::lock_guard<std::mutex> lock(
             _transitionMutex);
 
+        return IsInitializedUnlocked();
+    }
+
+    bool ProgressionMgr::IsInitializedUnlocked() const
+    {
         return _activeState.has_value();
     }
 

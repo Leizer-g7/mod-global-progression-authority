@@ -1,5 +1,7 @@
 #include "ProgressionBootstrap.h"
 
+#include <mutex>
+
 namespace GPA
 {
     BootstrapResult ProgressionBootstrap::Initialize(
@@ -8,7 +10,10 @@ namespace GPA
         ProgressionState const& defaultState,
         bool allowRollback)
     {
-        if (manager.IsInitialized())
+        std::lock_guard<std::mutex> lock(
+            manager._transitionMutex);
+
+        if (manager.IsInitializedUnlocked())
         {
             return {
                 BootstrapStatus::AlreadyInitialized,
@@ -64,7 +69,7 @@ namespace GPA
                 };
             }
 
-            if (!manager.Initialize(
+            if (!manager.InitializeUnlocked(
                     *loadResult.state,
                     allowRollback,
                     error))
@@ -112,7 +117,7 @@ namespace GPA
             };
         }
 
-        if (!manager.Initialize(
+        if (!manager.InitializeUnlocked(
                 defaultState,
                 allowRollback,
                 error))
