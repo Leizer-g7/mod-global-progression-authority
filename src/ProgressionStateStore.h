@@ -54,11 +54,23 @@ namespace GPA
         virtual StateLoadResult Load() = 0;
 
         /*
-         * Persists the complete GPA state atomically from
-         * the caller's point of view.
+         * Persists the complete GPA state.
+         *
+         * true:
+         *   The backend confirmed persistence success.
+         *
+         * false:
+         *   Persistence was not confirmed successful.
+         *   The caller must not publish the target state.
+         *   A false result does not by itself prove that
+         *   the durable backend remained unchanged.
          *
          * The store does not decide whether Phase or
          * ContentStage are valid progression values.
+         *
+         * Load() and Save() may be called while GPA holds
+         * its authority mutex. Store implementations must
+         * not re-enter ProgressionMgr or its coordinators.
          */
         virtual bool Save(
             ProgressionState const& state,
