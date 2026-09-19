@@ -1,0 +1,23 @@
+#
+# Global Progression Authority
+#
+# Disabled by default.
+#
+# GPA and mod-phase-progression must never be active progression
+# writers at the same time.
+#
+
+GlobalProgression.Enable = 0
+
+#
+# Used only when the canonical persisted row does not exist.
+# GPA validates this complete state before persisting it.
+#
+GlobalProgression.DefaultPhase = 20
+GlobalProgression.DefaultContentStage = 0
+
+#
+# Controls whether transitions to an earlier progression state
+# are permitted after GPA initialization.
+#
+GlobalProgression.AllowRollback = 0
