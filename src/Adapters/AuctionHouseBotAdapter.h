@@ -3,7 +3,8 @@
 
 namespace GPA::Adapters
 {
-    void RegisterAuctionHouseBotAdapter();
+    bool ConfigureAuctionHouseBotAdapter(
+        bool enabled);
 }
 
 #endif

@@ -3,7 +3,8 @@
 
 namespace GPA::Adapters
 {
-    void RegisterIndividualProgressionAdapter();
+    bool ConfigureIndividualProgressionAdapter(
+        bool enabled);
 }
 
 #endif

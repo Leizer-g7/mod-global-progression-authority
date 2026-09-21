@@ -1,10 +1,35 @@
 #include "Runtime/ProgressionRuntime.h"
+#include "Adapters/AuctionHouseBotAdapter.h"
+#include "Adapters/IndividualProgressionAdapter.h"
 
 #include "Log.h"
 #include "ScriptMgr.h"
 
 namespace
 {
+    void ConfigureExternalAdapters(
+        bool authorityEnabled)
+    {
+        bool const individualProgressionBridge =
+            GPA::Adapters::
+                ConfigureIndividualProgressionAdapter(
+                    authorityEnabled);
+
+        bool const auctionHouseBotBridge =
+            GPA::Adapters::
+                ConfigureAuctionHouseBotAdapter(
+                    authorityEnabled);
+
+        LOG_INFO(
+            "module",
+            "GPA: external progression adapters configured. "
+            "AuthorityEnabled={}, IndividualProgressionBridge={}, "
+            "AuctionHouseBotBridge={}.",
+            authorityEnabled ? 1 : 0,
+            individualProgressionBridge ? 1 : 0,
+            auctionHouseBotBridge ? 1 : 0);
+    }
+
     char const* BootstrapStatusName(
         GPA::BootstrapStatus status)
     {
@@ -59,12 +84,24 @@ namespace
             }
 
             sProgressionRuntime.LoadStartupConfig();
+
+            ConfigureExternalAdapters(
+                sProgressionRuntime
+                    .GetConfig()
+                    .enabled);
         }
 
         void OnStartup() override
         {
             if (!sProgressionRuntime.IsConfigLoaded())
+            {
                 sProgressionRuntime.LoadStartupConfig();
+
+                ConfigureExternalAdapters(
+                    sProgressionRuntime
+                        .GetConfig()
+                        .enabled);
+            }
 
             GPA::RuntimeConfig const& config =
                 sProgressionRuntime.GetConfig();

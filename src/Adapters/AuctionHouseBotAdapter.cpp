@@ -73,7 +73,8 @@ namespace GPA::Adapters
 #endif
     }
 
-    void RegisterAuctionHouseBotAdapter()
+    bool ConfigureAuctionHouseBotAdapter(
+        bool enabled)
     {
 #if GPA_HAS_AHBOT_PROGRESSION_BRIDGE
         auto registerProvider =
@@ -82,11 +83,18 @@ namespace GPA::Adapters
 
 #if defined(__GNUC__) || defined(__clang__)
         if (!registerProvider)
-            return;
+            return false;
 #endif
 
         registerProvider(
-            &ProvidePolicy);
+            enabled
+                ? &ProvidePolicy
+                : nullptr);
+
+        return true;
+#else
+        (void)enabled;
+        return false;
 #endif
     }
 }

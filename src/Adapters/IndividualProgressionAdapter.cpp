@@ -45,7 +45,8 @@ namespace GPA::Adapters
 #endif
     }
 
-    void RegisterIndividualProgressionAdapter()
+    bool ConfigureIndividualProgressionAdapter(
+        bool enabled)
     {
 #if GPA_HAS_INDIVIDUAL_PROGRESSION_BRIDGE
         auto registerProvider =
@@ -54,11 +55,18 @@ namespace GPA::Adapters
 
 #if defined(__GNUC__) || defined(__clang__)
         if (!registerProvider)
-            return;
+            return false;
 #endif
 
         registerProvider(
-            &ProvideContentStage);
+            enabled
+                ? &ProvideContentStage
+                : nullptr);
+
+        return true;
+#else
+        (void)enabled;
+        return false;
 #endif
     }
 }
