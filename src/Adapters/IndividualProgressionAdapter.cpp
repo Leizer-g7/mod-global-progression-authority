@@ -29,6 +29,9 @@ namespace GPA::Adapters
         bool ProvideContentStage(
             std::uint8_t& contentStage)
         {
+            if (!sProgressionRuntime.IsAuthorityReady())
+                return false;
+
             auto const activeState =
                 sProgressionRuntime
                     .GetManager()

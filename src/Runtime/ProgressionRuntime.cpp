@@ -102,8 +102,36 @@ namespace GPA
         return _manager;
     }
 
+    bool ProgressionRuntime::IsAuthorityReady() const
+    {
+        return _authorityReady.load(
+            std::memory_order_acquire);
+    }
+
+    void ProgressionRuntime::MarkAuthorityReady()
+    {
+        _authorityReady.store(
+            true,
+            std::memory_order_release);
+    }
+
+    void ProgressionRuntime::MarkAuthorityUnavailable()
+    {
+        _authorityReady.store(
+            false,
+            std::memory_order_release);
+    }
+
     BootstrapResult ProgressionRuntime::Bootstrap()
     {
+        /*
+         * Bootstrap only establishes the authoritative state.
+         *
+         * Runtime authority is published separately after all
+         * critical runtime adapters have synchronized successfully.
+         */
+        MarkAuthorityUnavailable();
+
         if (!_configLoaded)
         {
             return {

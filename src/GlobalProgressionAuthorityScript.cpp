@@ -157,6 +157,15 @@ namespace
                 return;
             }
 
+            /*
+             * No critical push adapters are wired yet.
+             *
+             * Playerbots/Battleground/LFG synchronization will be
+             * inserted before this publication point. Until then,
+             * pull adapters remain fail-closed.
+             */
+            sProgressionRuntime.MarkAuthorityReady();
+
             LOG_INFO(
                 "module",
                 "GPA: global progression authority initialized. "

@@ -28,6 +28,9 @@ namespace GPA::Adapters
         bool ProvidePolicy(
             AuctionHouseBotProgression::Policy& policy)
         {
+            if (!sProgressionRuntime.IsAuthorityReady())
+                return false;
+
             GPA::PhaseDefinition const* definition =
                 sProgressionRuntime
                     .GetManager()

@@ -6,6 +6,7 @@
 #include "ProgressionMgr.h"
 #include "ProgressionState.h"
 
+#include <atomic>
 #include <string>
 
 namespace GPA
@@ -40,11 +41,19 @@ namespace GPA
 
         BootstrapResult Bootstrap();
 
+        bool IsAuthorityReady() const;
+
+        void MarkAuthorityReady();
+
+        void MarkAuthorityUnavailable();
+
     private:
         ProgressionRuntime() = default;
 
         RuntimeConfig _config;
         bool _configLoaded = false;
+
+        std::atomic<bool> _authorityReady{false};
 
         ProgressionMgr _manager;
         WorldDatabaseProgressionStateStore _store;
