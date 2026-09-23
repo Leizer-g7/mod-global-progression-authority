@@ -3,6 +3,7 @@
 
 #include "ProgressionMgr.h"
 #include "ProgressionStateStore.h"
+#include "Runtime/CriticalRuntimeCoordinator.h"
 
 #include <string>
 
@@ -17,7 +18,38 @@ namespace GPA
         InvalidTarget,
         RollbackNotAllowed,
 
-        SaveFailed
+        RuntimePrepareFailed,
+
+        /*
+         * Target runtime application failed, but the previous
+         * runtime snapshot was restored successfully.
+         */
+        RuntimeApplyFailed,
+
+        /*
+         * Target runtime application failed and restoration of
+         * the previous runtime also failed.
+         */
+        RuntimeRecoveryFailed,
+
+        /*
+         * Persistence failed after runtime application, but the
+         * previous runtime snapshot was restored successfully.
+         */
+        SaveFailed,
+
+        /*
+         * Persistence failed and restoration of the previous
+         * runtime also failed.
+         */
+        SaveFailedRuntimeRecoveryFailed,
+
+        /*
+         * Persistence, GPA memory publication and runtime target
+         * application succeeded, but the runtime transaction could
+         * not be finalized. Authority must remain fail-closed.
+         */
+        RuntimeFinalizeFailed
     };
 
     struct PersistentTransitionResult
@@ -42,6 +74,37 @@ namespace GPA
                 status == PersistentTransitionStatus::Applied;
         }
 
+        /*
+         * Whether GPA memory and critical runtime are known to be
+         * mutually consistent after this result.
+         *
+         * This does not claim anything stronger about persistence
+         * after a Save() failure, whose contract explicitly permits
+         * an uncertain durable outcome.
+         */
+        bool RuntimeConsistent() const
+        {
+            switch (status)
+            {
+                case PersistentTransitionStatus::Applied:
+                case PersistentTransitionStatus::NoChange:
+                case PersistentTransitionStatus::InvalidTarget:
+                case PersistentTransitionStatus::RollbackNotAllowed:
+                case PersistentTransitionStatus::RuntimePrepareFailed:
+                case PersistentTransitionStatus::RuntimeApplyFailed:
+                case PersistentTransitionStatus::SaveFailed:
+                    return true;
+
+                case PersistentTransitionStatus::NotInitialized:
+                case PersistentTransitionStatus::RuntimeRecoveryFailed:
+                case PersistentTransitionStatus::
+                    SaveFailedRuntimeRecoveryFailed:
+                case PersistentTransitionStatus::RuntimeFinalizeFailed:
+                    return false;
+            }
+
+            return false;
+        }
     };
 
     class ProgressionTransitionCoordinator
@@ -49,7 +112,8 @@ namespace GPA
     public:
         ProgressionTransitionCoordinator(
             ProgressionMgr& manager,
-            IProgressionStateStore& store);
+            IProgressionStateStore& store,
+            CriticalRuntimeCoordinator& criticalRuntime);
 
         PersistentTransitionResult Execute(
             ProgressionState const& target);
@@ -57,6 +121,7 @@ namespace GPA
     private:
         ProgressionMgr& _manager;
         IProgressionStateStore& _store;
+        CriticalRuntimeCoordinator& _criticalRuntime;
     };
 }
 
