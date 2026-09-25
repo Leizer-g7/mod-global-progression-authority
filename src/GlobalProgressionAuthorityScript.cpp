@@ -158,12 +158,29 @@ namespace
             }
 
             /*
-             * No critical push adapters are wired yet.
+             * Synchronize all registered critical push adapters
+             * before publishing authority to pull providers.
              *
-             * Playerbots/Battleground/LFG synchronization will be
-             * inserted before this publication point. Until then,
-             * pull adapters remain fail-closed.
+             * With zero registered participants this is a valid
+             * no-op transaction. Playerbots/Battleground/LFG will
+             * register here incrementally.
              */
+            std::string runtimeError;
+
+            if (!sProgressionRuntime.SynchronizeCriticalRuntime(
+                    runtimeError))
+            {
+                LOG_ERROR(
+                    "module",
+                    "GPA: critical runtime synchronization failed. "
+                    "Authority remains unavailable. Error={}",
+                    runtimeError.empty()
+                        ? "<none>"
+                        : runtimeError);
+
+                return;
+            }
+
             sProgressionRuntime.MarkAuthorityReady();
 
             LOG_INFO(

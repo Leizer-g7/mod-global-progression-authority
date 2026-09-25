@@ -149,6 +149,16 @@ namespace GPA
 
         std::vector<ICriticalRuntimeParticipant*> _participants;
 
+        /*
+         * Number of participants for which ApplyPrepared() has
+         * actually been attempted in the current transaction.
+         *
+         * On recovery retry, only this prefix may receive
+         * RestorePrepared(). Participants after this prefix were
+         * prepared but never applied.
+         */
+        std::size_t _restoreCount = 0;
+
         CriticalRuntimeCoordinatorState _state =
             CriticalRuntimeCoordinatorState::Idle;
     };

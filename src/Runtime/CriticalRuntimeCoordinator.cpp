@@ -123,6 +123,8 @@ namespace GPA
             }
         }
 
+        _restoreCount = 0;
+
         _state =
             CriticalRuntimeCoordinatorState::Prepared;
 
@@ -153,6 +155,13 @@ namespace GPA
 
             std::string applyError;
 
+            /*
+             * ApplyPrepared() may partially mutate before returning
+             * false, so the participant being attempted belongs to
+             * the recovery prefix before the call begins.
+             */
+            _restoreCount = index + 1;
+
             if (!participant->ApplyPrepared(
                     applyError))
             {
@@ -166,7 +175,7 @@ namespace GPA
 
                 bool const restored =
                     RestoreRange(
-                        index + 1,
+                        _restoreCount,
                         restoreParticipant,
                         restoreError);
 
@@ -181,6 +190,8 @@ namespace GPA
                 if (restored)
                 {
                     CancelAllPrepared();
+
+                    _restoreCount = 0;
 
                     _state =
                         CriticalRuntimeCoordinatorState::Idle;
@@ -245,7 +256,7 @@ namespace GPA
         std::string restoreError;
 
         if (!RestoreRange(
-                _participants.size(),
+                _restoreCount,
                 failedParticipant,
                 restoreError))
         {
@@ -261,6 +272,8 @@ namespace GPA
         }
 
         CancelAllPrepared();
+
+        _restoreCount = 0;
 
         _state =
             CriticalRuntimeCoordinatorState::Idle;
@@ -291,6 +304,8 @@ namespace GPA
             participant->CommitPrepared();
         }
 
+        _restoreCount = 0;
+
         _state =
             CriticalRuntimeCoordinatorState::Idle;
 
@@ -308,6 +323,8 @@ namespace GPA
         }
 
         CancelAllPrepared();
+
+        _restoreCount = 0;
 
         _state =
             CriticalRuntimeCoordinatorState::Idle;

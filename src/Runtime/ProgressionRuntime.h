@@ -5,8 +5,11 @@
 #include "ProgressionBootstrap.h"
 #include "ProgressionMgr.h"
 #include "ProgressionState.h"
+#include "ProgressionTransitionCoordinator.h"
+#include "Runtime/CriticalRuntimeCoordinator.h"
 
 #include <atomic>
+#include <cstddef>
 #include <string>
 
 namespace GPA
@@ -39,7 +42,19 @@ namespace GPA
 
         ProgressionMgr& GetManager();
 
+        bool RegisterCriticalRuntimeParticipant(
+            ICriticalRuntimeParticipant& participant,
+            std::string& error);
+
+        std::size_t GetCriticalRuntimeParticipantCount() const;
+
         BootstrapResult Bootstrap();
+
+        bool SynchronizeCriticalRuntime(
+            std::string& error);
+
+        PersistentTransitionResult TransitionTo(
+            ProgressionState const& target);
 
         bool IsAuthorityReady() const;
 
@@ -48,7 +63,9 @@ namespace GPA
         void MarkAuthorityUnavailable();
 
     private:
-        ProgressionRuntime() = default;
+        ProgressionRuntime();
+
+        bool TryBeginAuthorityTransition();
 
         RuntimeConfig _config;
         bool _configLoaded = false;
@@ -57,6 +74,10 @@ namespace GPA
 
         ProgressionMgr _manager;
         WorldDatabaseProgressionStateStore _store;
+
+        CriticalRuntimeCoordinator _criticalRuntime;
+
+        ProgressionTransitionCoordinator _transitionCoordinator;
     };
 }
 

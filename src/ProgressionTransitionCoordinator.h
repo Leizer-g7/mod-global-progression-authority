@@ -15,6 +15,7 @@ namespace GPA
         NoChange,
 
         NotInitialized,
+        AuthorityUnavailable,
         InvalidTarget,
         RollbackNotAllowed,
 
@@ -96,7 +97,41 @@ namespace GPA
                     return true;
 
                 case PersistentTransitionStatus::NotInitialized:
+                case PersistentTransitionStatus::AuthorityUnavailable:
                 case PersistentTransitionStatus::RuntimeRecoveryFailed:
+                case PersistentTransitionStatus::
+                    SaveFailedRuntimeRecoveryFailed:
+                case PersistentTransitionStatus::RuntimeFinalizeFailed:
+                    return false;
+            }
+
+            return false;
+        }
+
+        /*
+         * Whether the global authority may safely be published again
+         * after this result.
+         *
+         * This is deliberately stronger than RuntimeConsistent().
+         * SaveFailed may leave GPA memory and critical runtime mutually
+         * coherent while the durable backend outcome remains uncertain.
+         */
+        bool SafeToRepublishAuthority() const
+        {
+            switch (status)
+            {
+                case PersistentTransitionStatus::Applied:
+                case PersistentTransitionStatus::NoChange:
+                case PersistentTransitionStatus::InvalidTarget:
+                case PersistentTransitionStatus::RollbackNotAllowed:
+                case PersistentTransitionStatus::RuntimePrepareFailed:
+                case PersistentTransitionStatus::RuntimeApplyFailed:
+                    return true;
+
+                case PersistentTransitionStatus::NotInitialized:
+                case PersistentTransitionStatus::AuthorityUnavailable:
+                case PersistentTransitionStatus::RuntimeRecoveryFailed:
+                case PersistentTransitionStatus::SaveFailed:
                 case PersistentTransitionStatus::
                     SaveFailedRuntimeRecoveryFailed:
                 case PersistentTransitionStatus::RuntimeFinalizeFailed:
