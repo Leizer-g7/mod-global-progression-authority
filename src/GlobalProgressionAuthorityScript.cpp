@@ -1,6 +1,7 @@
 #include "Runtime/ProgressionRuntime.h"
 #include "Adapters/AuctionHouseBotAdapter.h"
 #include "Adapters/IndividualProgressionAdapter.h"
+#include "Adapters/PlayerbotsPhaseAdapter.h"
 
 #include "Log.h"
 #include "ScriptMgr.h"
@@ -63,11 +64,48 @@ namespace
     class GlobalProgressionAuthorityWorldScript final
         : public WorldScript
     {
+    private:
+        bool _criticalRuntimeResyncPending = false;
+
     public:
         GlobalProgressionAuthorityWorldScript()
             : WorldScript(
                 "GlobalProgressionAuthorityWorldScript")
         {
+        }
+
+        void OnBeforeConfigLoad(bool reload) override
+        {
+            if (!reload ||
+                !sProgressionRuntime.IsConfigLoaded())
+            {
+                return;
+            }
+
+            GPA::RuntimeConfig const& config =
+                sProgressionRuntime.GetConfig();
+
+            if (!config.enabled)
+            {
+                return;
+            }
+
+            /*
+             * Config reload is synchronous, but critical participants
+             * may reload their own mutable runtime later in the same
+             * OnAfterConfigLoad dispatch. Unpublish GPA before that
+             * window begins and only republish after a deferred
+             * critical-runtime synchronization succeeds.
+             */
+            _criticalRuntimeResyncPending = false;
+
+            sProgressionRuntime.MarkAuthorityUnavailable();
+
+            LOG_INFO(
+                "module",
+                "GPA: global config reload beginning. "
+                "Authority unpublished until critical runtime "
+                "is re-synchronized.");
         }
 
         void OnAfterConfigLoad(bool reload) override
@@ -77,8 +115,55 @@ namespace
                 LOG_INFO(
                     "module",
                     "GPA: global config reload detected. "
-                    "Startup authority settings remain unchanged "
-                    "until the next worldserver start.");
+                    "Startup authority settings remain unchanged.");
+
+                if (!sProgressionRuntime.IsConfigLoaded())
+                {
+                    sProgressionRuntime.MarkAuthorityUnavailable();
+
+                    LOG_ERROR(
+                        "module",
+                        "GPA: cannot schedule critical runtime "
+                        "re-synchronization because startup "
+                        "configuration is unavailable.");
+
+                    return;
+                }
+
+                GPA::RuntimeConfig const& config =
+                    sProgressionRuntime.GetConfig();
+
+                if (!config.enabled)
+                {
+                    return;
+                }
+
+                if (!config.valid)
+                {
+                    sProgressionRuntime.MarkAuthorityUnavailable();
+
+                    LOG_ERROR(
+                        "module",
+                        "GPA: cannot schedule critical runtime "
+                        "re-synchronization because startup "
+                        "configuration is invalid: {}",
+                        config.error);
+
+                    return;
+                }
+
+                /*
+                 * Do not synchronize here. Other module callbacks,
+                 * including Playerbots, may still execute later in
+                 * this same config-reload dispatch and overwrite
+                 * their mutable runtime configuration.
+                 */
+                _criticalRuntimeResyncPending = true;
+
+                LOG_INFO(
+                    "module",
+                    "GPA: critical runtime re-synchronization "
+                    "scheduled for the next world update.");
 
                 return;
             }
@@ -89,6 +174,45 @@ namespace
                 sProgressionRuntime
                     .GetConfig()
                     .enabled);
+        }
+
+        void OnUpdate(uint32 /*diff*/) override
+        {
+            if (!_criticalRuntimeResyncPending)
+            {
+                return;
+            }
+
+            /*
+             * Consume exactly once. A failed re-synchronization stays
+             * fail-closed instead of retrying indefinitely every tick.
+             * A later explicit config reload may schedule a new attempt.
+             */
+            _criticalRuntimeResyncPending = false;
+
+            std::string error;
+
+            if (!sProgressionRuntime.SynchronizeCriticalRuntime(
+                    error))
+            {
+                LOG_ERROR(
+                    "module",
+                    "GPA: critical runtime re-synchronization "
+                    "after config reload failed. "
+                    "Authority remains unavailable. Error={}",
+                    error.empty()
+                        ? "<none>"
+                        : error);
+
+                return;
+            }
+
+            sProgressionRuntime.MarkAuthorityReady();
+
+            LOG_INFO(
+                "module",
+                "GPA: critical runtime re-synchronized after "
+                "config reload. Authority republished.");
         }
 
         void OnStartup() override
@@ -158,12 +282,59 @@ namespace
             }
 
             /*
+             * Playerbots is the first critical push participant.
+             *
+             * Registration happens only after bootstrap has
+             * established and validated the active authoritative
+             * state, but before runtime synchronization and
+             * authority publication.
+             */
+            GPA::ICriticalRuntimeParticipant* const
+                playerbotsParticipant =
+                    GPA::GetPlayerbotsPhaseAdapter();
+
+            if (playerbotsParticipant)
+            {
+                std::string registrationError;
+
+                if (!sProgressionRuntime
+                        .RegisterCriticalRuntimeParticipant(
+                            *playerbotsParticipant,
+                            registrationError))
+                {
+                    sProgressionRuntime.MarkAuthorityUnavailable();
+
+                    LOG_ERROR(
+                        "module",
+                        "GPA: failed to register Playerbots critical "
+                        "runtime participant. Authority remains "
+                        "unavailable. Error={}",
+                        registrationError.empty()
+                            ? "<none>"
+                            : registrationError);
+
+                    return;
+                }
+
+                LOG_INFO(
+                    "module",
+                    "GPA: critical runtime participant registered. "
+                    "Name=PlayerbotsPhaseAdapter, Count={}.",
+                    sProgressionRuntime
+                        .GetCriticalRuntimeParticipantCount());
+            }
+            else
+            {
+                LOG_INFO(
+                    "module",
+                    "GPA: Playerbots integration is not available "
+                    "in this build. Critical runtime participant "
+                    "registration skipped.");
+            }
+
+            /*
              * Synchronize all registered critical push adapters
              * before publishing authority to pull providers.
-             *
-             * With zero registered participants this is a valid
-             * no-op transaction. Playerbots/Battleground/LFG will
-             * register here incrementally.
              */
             std::string runtimeError;
 
