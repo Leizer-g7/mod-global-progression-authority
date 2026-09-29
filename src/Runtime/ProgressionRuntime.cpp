@@ -74,6 +74,8 @@ namespace GPA
         _config = config;
         _configLoaded = true;
 
+        ReloadPullPolicyConfig();
+
         LOG_INFO(
             "module",
             "GPA: startup configuration loaded. "
@@ -105,6 +107,90 @@ namespace GPA
         return _config;
     }
 
+    void ProgressionRuntime::ReloadPullPolicyConfig()
+    {
+        bool const gmBypass =
+            sConfigMgr->GetOption<bool>(
+                "GlobalProgression.GMBypass",
+                true);
+
+        _gmBypass.store(
+            gmBypass,
+            std::memory_order_release);
+
+        LOG_INFO(
+            "module",
+            "GPA: pull-policy configuration loaded. "
+            "GMBypass={}.",
+            gmBypass ? 1 : 0);
+    }
+
+    bool ProgressionRuntime::IsGMBypassEnabled() const
+    {
+        return _gmBypass.load(
+            std::memory_order_acquire);
+    }
+
+    PullPolicyRuntimeView
+    ProgressionRuntime::GetPullPolicyRuntimeView() const
+    {
+        /*
+         * Publication and manager state are captured as one logical
+         * read boundary.
+         *
+         * TryBeginAuthorityTransition(), MarkAuthorityUnavailable()
+         * and MarkAuthorityReady() use this same publication mutex.
+         *
+         * Therefore a pull consumer cannot combine a definition from
+         * one publication epoch with readiness from another.
+         */
+        std::lock_guard<std::mutex> publicationLock(
+            _authorityPublicationMutex);
+
+        PullPolicyRuntimeView view;
+
+        view.configLoaded =
+            _configLoaded;
+
+        view.gmBypass =
+            _gmBypass.load(
+                std::memory_order_acquire);
+
+        if (!_configLoaded)
+            return view;
+
+        view.enabled =
+            _config.enabled;
+
+        view.configValid =
+            _config.valid;
+
+        if (_config.enabled &&
+            _config.valid)
+        {
+            PhaseDefinition const* activeDefinition =
+                _manager.GetActiveDefinition();
+
+            if (activeDefinition)
+            {
+                /*
+                 * PhaseCatalog definitions are immutable after
+                 * construction. Copy the selected definition while
+                 * publication is serialized so callers retain no
+                 * internal catalog pointer.
+                 */
+                view.activeDefinition =
+                    *activeDefinition;
+            }
+        }
+
+        view.authorityReady =
+            _authorityReady.load(
+                std::memory_order_acquire);
+
+        return view;
+    }
+
     ProgressionMgr& ProgressionRuntime::GetManager()
     {
         return _manager;
@@ -133,6 +219,9 @@ namespace GPA
 
     void ProgressionRuntime::MarkAuthorityReady()
     {
+        std::lock_guard<std::mutex> publicationLock(
+            _authorityPublicationMutex);
+
         _authorityReady.store(
             true,
             std::memory_order_release);
@@ -140,6 +229,9 @@ namespace GPA
 
     void ProgressionRuntime::MarkAuthorityUnavailable()
     {
+        std::lock_guard<std::mutex> publicationLock(
+            _authorityPublicationMutex);
+
         _authorityReady.store(
             false,
             std::memory_order_release);
@@ -147,6 +239,9 @@ namespace GPA
 
     bool ProgressionRuntime::TryBeginAuthorityTransition()
     {
+        std::lock_guard<std::mutex> publicationLock(
+            _authorityPublicationMutex);
+
         bool expected = true;
 
         return _authorityReady.compare_exchange_strong(

@@ -10,6 +10,8 @@
 
 #include <atomic>
 #include <cstddef>
+#include <mutex>
+#include <optional>
 #include <string>
 
 namespace GPA
@@ -29,6 +31,18 @@ namespace GPA
         std::string error;
     };
 
+    struct PullPolicyRuntimeView
+    {
+        bool configLoaded = false;
+        bool enabled = false;
+        bool configValid = false;
+
+        bool authorityReady = false;
+        bool gmBypass = true;
+
+        std::optional<PhaseDefinition> activeDefinition;
+    };
+
     class ProgressionRuntime
     {
     public:
@@ -39,6 +53,13 @@ namespace GPA
         bool IsConfigLoaded() const;
 
         RuntimeConfig const& GetConfig() const;
+
+        void ReloadPullPolicyConfig();
+
+        bool IsGMBypassEnabled() const;
+
+        PullPolicyRuntimeView
+        GetPullPolicyRuntimeView() const;
 
         ProgressionMgr& GetManager();
 
@@ -70,7 +91,20 @@ namespace GPA
         RuntimeConfig _config;
         bool _configLoaded = false;
 
+        /*
+         * Serializes publication-state transitions against coherent
+         * pull-policy snapshots.
+         *
+         * Lock order when both are needed:
+         *
+         *   _authorityPublicationMutex
+         *       -> ProgressionMgr::_transitionMutex
+         */
+        mutable std::mutex _authorityPublicationMutex;
+
         std::atomic<bool> _authorityReady{false};
+
+        std::atomic<bool> _gmBypass{true};
 
         ProgressionMgr _manager;
         WorldDatabaseProgressionStateStore _store;

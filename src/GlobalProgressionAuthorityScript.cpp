@@ -130,6 +130,13 @@ namespace
                     return;
                 }
 
+                /*
+                 * Pull-policy operational settings are reloadable.
+                 * Authority startup settings remain intentionally
+                 * unchanged until restart.
+                 */
+                sProgressionRuntime.ReloadPullPolicyConfig();
+
                 GPA::RuntimeConfig const& config =
                     sProgressionRuntime.GetConfig();
 

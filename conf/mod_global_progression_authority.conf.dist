@@ -10,6 +10,15 @@
 GlobalProgression.Enable = 0
 
 #
+# Allows Game Masters to bypass Player / Profession / Travel
+# pull-policy restrictions.
+#
+# This is an operational setting and may be changed with
+# .reload config without changing the authoritative phase.
+#
+GlobalProgression.GMBypass = 1
+
+#
 # Used only when the canonical persisted row does not exist.
 # GPA validates this complete state before persisting it.
 #
