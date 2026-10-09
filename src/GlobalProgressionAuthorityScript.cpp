@@ -3,8 +3,11 @@
 #include "Adapters/IndividualProgressionAdapter.h"
 #include "Adapters/PlayerbotsPhaseAdapter.h"
 
+#include "Chat.h"
 #include "Log.h"
 #include "ScriptMgr.h"
+
+using namespace Acore::ChatCommands;
 
 namespace
 {
@@ -378,7 +381,333 @@ namespace
     };
 }
 
+namespace
+{
+    char const* PersistentTransitionStatusName(
+        GPA::PersistentTransitionStatus status)
+    {
+        using GPA::PersistentTransitionStatus;
+
+        switch (status)
+        {
+            case PersistentTransitionStatus::Applied:
+                return "Applied";
+            case PersistentTransitionStatus::NoChange:
+                return "NoChange";
+            case PersistentTransitionStatus::NotInitialized:
+                return "NotInitialized";
+            case PersistentTransitionStatus::AuthorityUnavailable:
+                return "AuthorityUnavailable";
+            case PersistentTransitionStatus::InvalidTarget:
+                return "InvalidTarget";
+            case PersistentTransitionStatus::RollbackNotAllowed:
+                return "RollbackNotAllowed";
+            case PersistentTransitionStatus::RuntimePrepareFailed:
+                return "RuntimePrepareFailed";
+            case PersistentTransitionStatus::RuntimeApplyFailed:
+                return "RuntimeApplyFailed";
+            case PersistentTransitionStatus::RuntimeRecoveryFailed:
+                return "RuntimeRecoveryFailed";
+            case PersistentTransitionStatus::SaveFailed:
+                return "SaveFailed";
+            case PersistentTransitionStatus::SaveFailedRuntimeRecoveryFailed:
+                return "SaveFailedRuntimeRecoveryFailed";
+            case PersistentTransitionStatus::RuntimeFinalizeFailed:
+                return "RuntimeFinalizeFailed";
+        }
+
+        return "Unknown";
+    }
+
+    char const* TransitionDirectionName(
+        GPA::TransitionDirection direction)
+    {
+        using GPA::TransitionDirection;
+
+        switch (direction)
+        {
+            case TransitionDirection::NoChange:
+                return "NoChange";
+            case TransitionDirection::Forward:
+                return "Forward";
+            case TransitionDirection::Rollback:
+                return "Rollback";
+        }
+
+        return "Unknown";
+    }
+
+    class GlobalProgressionAuthorityCommandScript final
+        : public CommandScript
+    {
+    public:
+        GlobalProgressionAuthorityCommandScript()
+            : CommandScript(
+                "GlobalProgressionAuthorityCommandScript")
+        {
+        }
+
+        ChatCommandTable GetCommands() const override
+        {
+            static ChatCommandTable gpaTable =
+            {
+                {
+                    "status",
+                    HandleStatusCommand,
+                    SEC_GAMEMASTER,
+                    Console::Yes
+                },
+                {
+                    "set",
+                    HandleSetCommand,
+                    SEC_ADMINISTRATOR,
+                    Console::Yes
+                }
+            };
+
+            static ChatCommandTable commandTable =
+            {
+                { "gpa", gpaTable }
+            };
+
+            return commandTable;
+        }
+
+    private:
+        static bool HandleStatusCommand(
+            ChatHandler* handler)
+        {
+            GPA::RuntimeConfig const& config =
+                sProgressionRuntime.GetConfig();
+
+            std::optional<GPA::ProgressionState> const state =
+                sProgressionRuntime
+                    .GetManager()
+                    .GetActiveState();
+
+            GPA::PhaseDefinition const* definition =
+                sProgressionRuntime
+                    .GetManager()
+                    .GetActiveDefinition();
+
+            handler->SendSysMessage(
+                "========== GPA STATUS ==========");
+
+            handler->PSendSysMessage(
+                "Config Loaded: {}",
+                sProgressionRuntime.IsConfigLoaded()
+                    ? "YES"
+                    : "NO");
+
+            handler->PSendSysMessage(
+                "Enabled: {}",
+                config.enabled
+                    ? "YES"
+                    : "NO");
+
+            handler->PSendSysMessage(
+                "Config Valid: {}",
+                config.valid
+                    ? "YES"
+                    : "NO");
+
+            handler->PSendSysMessage(
+                "Authority Ready: {}",
+                sProgressionRuntime.IsAuthorityReady()
+                    ? "YES"
+                    : "NO");
+
+            handler->PSendSysMessage(
+                "Rollback: {}",
+                sProgressionRuntime
+                        .GetManager()
+                        .IsRollbackAllowed()
+                    ? "ENABLED"
+                    : "DISABLED");
+
+            if (!state || !definition)
+            {
+                handler->SendSysMessage(
+                    "Active authoritative state: UNAVAILABLE");
+
+                handler->SendSysMessage(
+                    "================================");
+
+                return true;
+            }
+
+            handler->PSendSysMessage(
+                "Phase: {}",
+                static_cast<uint32>(
+                    state->phase));
+
+            handler->PSendSysMessage(
+                "ContentStage: {} (allowed {}..{})",
+                static_cast<uint32>(
+                    state->contentStage),
+                static_cast<uint32>(
+                    definition->contentStageMin),
+                static_cast<uint32>(
+                    definition->contentStageMax));
+
+            handler->PSendSysMessage(
+                "Player Max Level: {}",
+                static_cast<uint32>(
+                    definition->playerMaxLevel));
+
+            handler->PSendSysMessage(
+                "Professions: Crafting={} Gathering={} Secondary={} Riding={}",
+                static_cast<uint32>(
+                    definition->professions.craftingCap),
+                static_cast<uint32>(
+                    definition->professions.gatheringCap),
+                static_cast<uint32>(
+                    definition->professions.secondaryCap),
+                static_cast<uint32>(
+                    definition->professions.ridingCap));
+
+            handler->PSendSysMessage(
+                "Outland: {}",
+                definition->world.outlandEnabled
+                    ? "OPEN"
+                    : "LOCKED");
+
+            handler->PSendSysMessage(
+                "Northrend: {}",
+                definition->world.northrendEnabled
+                    ? "OPEN"
+                    : "LOCKED");
+
+            handler->PSendSysMessage(
+                "Death Knights: {}",
+                definition->deathKnightEnabled
+                    ? "OPEN"
+                    : "LOCKED");
+
+            handler->SendSysMessage(
+                "================================");
+
+            return true;
+        }
+
+        static bool HandleSetCommand(
+            ChatHandler* handler,
+            uint32 requestedPhase,
+            uint32 requestedContentStage)
+        {
+            if (requestedPhase > 255 ||
+                requestedContentStage > 255)
+            {
+                handler->SendSysMessage(
+                    "Invalid GPA state: values must fit uint8.");
+
+                return true;
+            }
+
+            GPA::ProgressionState const target{
+                static_cast<std::uint8_t>(
+                    requestedPhase),
+                static_cast<std::uint8_t>(
+                    requestedContentStage)
+            };
+
+            std::optional<GPA::ProgressionState> const before =
+                sProgressionRuntime
+                    .GetManager()
+                    .GetActiveState();
+
+            GPA::PersistentTransitionResult const result =
+                sProgressionRuntime.TransitionTo(
+                    target);
+
+            handler->PSendSysMessage(
+                "GPA transition result: {}.",
+                PersistentTransitionStatusName(
+                    result.status));
+
+            handler->PSendSysMessage(
+                "Direction: {}.",
+                TransitionDirectionName(
+                    result.transition.direction));
+
+            if (!result.error.empty())
+            {
+                handler->PSendSysMessage(
+                    "Error: {}",
+                    result.error);
+            }
+
+            if (!result.Succeeded())
+            {
+                std::optional<GPA::ProgressionState> const current =
+                    sProgressionRuntime
+                        .GetManager()
+                        .GetActiveState();
+
+                if (current)
+                {
+                    handler->PSendSysMessage(
+                        "GPA memory state: Phase={}, ContentStage={}.",
+                        static_cast<uint32>(
+                            current->phase),
+                        static_cast<uint32>(
+                            current->contentStage));
+                }
+                else
+                {
+                    handler->SendSysMessage(
+                        "GPA memory state: UNAVAILABLE.");
+                }
+
+                handler->PSendSysMessage(
+                    "Runtime consistent: {}.",
+                    result.RuntimeConsistent()
+                        ? "YES"
+                        : "NO");
+
+                handler->PSendSysMessage(
+                    "Safe to republish authority: {}.",
+                    result.SafeToRepublishAuthority()
+                        ? "YES"
+                        : "NO");
+
+                handler->PSendSysMessage(
+                    "Authority Ready: {}.",
+                    sProgressionRuntime.IsAuthorityReady()
+                        ? "YES"
+                        : "NO");
+
+                return true;
+            }
+
+            std::optional<GPA::ProgressionState> const after =
+                sProgressionRuntime
+                    .GetManager()
+                    .GetActiveState();
+
+            if (after)
+            {
+                handler->PSendSysMessage(
+                    "Active GPA state: Phase={}, ContentStage={}.",
+                    static_cast<uint32>(
+                        after->phase),
+                    static_cast<uint32>(
+                        after->contentStage));
+            }
+            else
+            {
+                handler->SendSysMessage(
+                    "WARNING: transition succeeded but "
+                    "active GPA state is unavailable.");
+            }
+
+            return true;
+        }
+    };
+}
+
 void AddSC_global_progression_authority()
 {
     new GlobalProgressionAuthorityWorldScript();
+    new GlobalProgressionAuthorityCommandScript();
 }
